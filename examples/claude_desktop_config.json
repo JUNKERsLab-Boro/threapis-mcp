@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "threads-insights": {
+      "command": "/ABSOLUTE/PATH/TO/threAPIs/.venv/bin/python",
+      "args": ["-m", "threads_insights.server"],
+      "env": {
+        "THREADS_APP_ID": "your-app-id",
+        "THREADS_APP_SECRET": "your-app-secret",
+        "THREADS_REDIRECT_URI": "https://localhost/callback",
+        "THREADS_DB_PATH": "/ABSOLUTE/PATH/TO/threAPIs/data/threads_insights.db",
+        "THREADS_TOKEN_FILE": "/ABSOLUTE/PATH/TO/threAPIs/data/token.json"
+      }
+    }
+  }
+}
