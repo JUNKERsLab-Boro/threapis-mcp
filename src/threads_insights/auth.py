@@ -19,18 +19,23 @@ AUTHORIZE_URL = "https://threads.com/oauth/authorize"
 GRAPH = "https://graph.threads.com"
 # Least privilege: basic (required everywhere) + insights. No publish/reply scopes.
 SCOPES = "threads_basic,threads_manage_insights"
+PUBLISH_SCOPE = "threads_content_publish"  # only requested by `login --publish`
 REFRESH_MIN_AGE = 24 * 3600  # docs: token must be >= 24h old to refresh
 REFRESH_WITHIN = 7 * 24 * 3600  # auto-refresh when < 7 days remain
 
 
-def build_authorize_url(config: Config, state: str) -> str:
+def scope_string(publish: bool = False) -> str:
+    return SCOPES + ("," + PUBLISH_SCOPE if publish else "")
+
+
+def build_authorize_url(config: Config, state: str, publish: bool = False) -> str:
     if not (config.app_id and config.redirect_uri):
         raise ConfigError("THREADS_APP_ID and THREADS_REDIRECT_URI are required")
     q = urlencode(
         {
             "client_id": config.app_id,
             "redirect_uri": config.redirect_uri,
-            "scope": SCOPES,
+            "scope": scope_string(publish),
             "response_type": "code",
             "state": state,
         }
@@ -116,17 +121,17 @@ def refresh_long_lived(token: str, http: httpx.Client) -> tuple[str, int]:
     return b["access_token"], int(b["expires_in"])
 
 
-def login(config: Config, http: httpx.Client, ask=input, out=print) -> None:
+def login(config: Config, http: httpx.Client, ask=input, out=print, publish: bool = False) -> None:
     store = TokenStore(config)
     state = secrets.token_urlsafe(24)
     out("1. Open this URL in a browser and approve access:\n")
-    out(build_authorize_url(config, state))
+    out(build_authorize_url(config, state, publish))
     out("\n2. After approval you are redirected to your redirect URI (the page may fail to load).")
     cb = ask("3. Paste the full redirected URL here: ")
     code = parse_callback(cb, state)
     short, user_id = exchange_code(config, code, http)
     long, expires_in = to_long_lived(config, short, http)
-    store.save(long, expires_in, user_id)
+    store.save(long, expires_in, user_id, scope_string(publish).split(","))
     out(f"Saved long-lived token to {config.token_file} (valid ~{expires_in // 86400} days).")
 
 
@@ -146,7 +151,7 @@ def refresh_if_needed(config: Config, http: httpx.Client, force: bool = False) -
             raise ThreadsError("Token is less than 24h old; Threads does not allow refresh yet")
         return False
     new, expires_in = refresh_long_lived(t.access_token, http)
-    store.save(new, expires_in, t.user_id)
+    store.save(new, expires_in, t.user_id, t.scopes)
     return True
 
 
@@ -157,7 +162,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with httpx.Client(timeout=config.timeout) as http:
             if cmd == "login":
-                login(config, http)
+                login(config, http, publish="--publish" in argv[1:])
             elif cmd == "refresh":
                 print("Refreshed." if refresh_if_needed(config, http, force=True) else "Nothing to do.")
             elif cmd == "status":
@@ -165,7 +170,7 @@ def main(argv: list[str] | None = None) -> int:
                 left = None if t.expires_at is None else round((t.expires_at - time.time()) / 86400, 1)
                 print(f"source={'file' if t.from_file else 'env'} days_left={left}")
             else:
-                print("usage: threads-insights-auth login|refresh|status", file=sys.stderr)
+                print("usage: threads-insights-auth login [--publish]|refresh|status", file=sys.stderr)
                 return 2
     except ThreadsError as e:
         print(f"error: {e}", file=sys.stderr)

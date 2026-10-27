@@ -100,3 +100,20 @@ def test_missing_token(tmp_path):
     cfg = make_config(tmp_path, access_token=None)
     with pytest.raises(AuthError):
         TokenStore(cfg).load()
+
+
+def test_publish_scope_only_when_requested(cfg):
+    base = parse_qs(urlparse(auth.build_authorize_url(cfg, "S")).query)["scope"][0]
+    pub = parse_qs(urlparse(auth.build_authorize_url(cfg, "S", publish=True)).query)["scope"][0]
+    assert "threads_content_publish" not in base
+    assert pub == "threads_basic,threads_manage_insights,threads_content_publish"
+
+
+def test_scopes_persist_through_refresh(tmp_path):
+    cfg = make_config(tmp_path, access_token=None)
+    TokenStore(cfg).save("OLD", 3 * 86400, "42", ["threads_basic", "threads_content_publish"])
+    d = json.loads(cfg.token_file.read_text()); d["refreshed_at"] -= 57 * 86400
+    cfg.token_file.write_text(json.dumps(d))
+    with httpx.Client(transport=httpx.MockTransport(refresh_handler)) as http:
+        assert auth.refresh_if_needed(cfg, http) is True
+    assert TokenStore(cfg).load().scopes == ["threads_basic", "threads_content_publish"]

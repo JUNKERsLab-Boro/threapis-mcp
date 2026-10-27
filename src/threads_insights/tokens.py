@@ -19,6 +19,7 @@ class TokenInfo:
     refreshed_at: float | None = None
     user_id: str | None = None
     from_file: bool = False
+    scopes: list[str] | None = None  # None = unknown (env token / legacy file)
 
     def __repr__(self) -> str:  # never leak the token
         return f"TokenInfo(expires_at={self.expires_at}, from_file={self.from_file})"
@@ -44,6 +45,7 @@ class TokenStore:
                         refreshed_at=d.get("refreshed_at"),
                         user_id=d.get("user_id"),
                         from_file=True,
+                        scopes=d.get("scopes"),
                     )
             except (OSError, ValueError):
                 pass  # fall through to env
@@ -53,13 +55,15 @@ class TokenStore:
             "No Threads access token. Run `threads-insights-auth login` or set THREADS_ACCESS_TOKEN."
         )
 
-    def save(self, token: str, expires_in: int | float, user_id: str | None) -> TokenInfo:
+    def save(self, token: str, expires_in: int | float, user_id: str | None,
+             scopes: list[str] | None = None) -> TokenInfo:
         now = time.time()
         data = {
             "access_token": token,
             "expires_at": now + float(expires_in),
             "refreshed_at": now,
             "user_id": user_id,
+            "scopes": scopes,
         }
         p = self.config.token_file
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -75,4 +79,4 @@ class TokenStore:
             except OSError:
                 pass
             raise
-        return TokenInfo(token, data["expires_at"], now, user_id, True)
+        return TokenInfo(token, data["expires_at"], now, user_id, True, scopes)

@@ -19,6 +19,7 @@ class Config:
     db_path: Path
     token_file: Path
     timeout: float
+    enable_publish: bool = False
 
     @classmethod
     def from_env(cls, load_env_file: bool = True) -> "Config":
@@ -44,4 +45,5 @@ class Config:
             db_path=Path(get("THREADS_DB_PATH") or "./data/threads_insights.db").expanduser(),
             token_file=Path(get("THREADS_TOKEN_FILE") or "./data/token.json").expanduser(),
             timeout=timeout,
+            enable_publish=(get("THREADS_ENABLE_PUBLISH") or "").lower() in ("1", "true", "yes"),
         )

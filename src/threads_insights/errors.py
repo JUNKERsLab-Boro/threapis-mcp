@@ -31,3 +31,7 @@ class NetworkError(ThreadsError):
 
 class APIError(ThreadsError):
     pass
+
+
+class AmbiguousOutcomeError(ThreadsError):
+    """A write request may or may not have taken effect (timeout, 5xx, unparseable reply)."""

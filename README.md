@@ -1,6 +1,6 @@
 # ThreAPIs MCP (Threads Insights MCP Server)
 
-Meta 公式 Threads API を使った **読み取り専用** の MCP サーバー。AI クライアント（Claude / ChatGPT 等）から自分の投稿とインサイトを閲覧・比較できます。投稿・返信・削除機能は存在しません。
+Meta 公式 Threads API を使った **読み取り専用** の MCP サーバー。AI クライアント（Claude / ChatGPT 等）から自分の投稿とインサイトを閲覧・比較できます。返信・削除機能は存在しません。投稿はオプションのテキスト投稿のみ（後述、既定で無効）。
 
 ## ツール
 
@@ -62,9 +62,43 @@ claude mcp add threads-insights -- /ABS/PATH/.venv/bin/python -m threads_insight
 
 将来の HTTP 化: `THREADS_MCP_TRANSPORT=streamable-http`（127.0.0.1 バインド。公開する場合は別途認証が必要）。
 
+## 投稿機能（オプション・既定で無効）
+
+テキスト投稿のみ。分析ツール4つとは別モジュール（`publisher.py` / `publish_service.py` / `publish_store.py`）で、`THREADS_ENABLE_PUBLISH=1` を設定したときだけ次のツールが登録されます（未設定なら従来どおり読み取り専用）。
+
+| ツール | 内容 |
+|---|---|
+| `prepare_text_post(text, reply_control?, topic_tag?)` | **投稿しない。** 本文を検証し、アカウント名・本文・文字数・返信範囲のプレビューと `request_id` / `confirm_hash` を返す（下書きは30分で失効） |
+| `publish_text_post(request_id, confirm_hash, allow_retry_after_unknown?)` | **公開操作。** ユーザーがプレビューを明示承認した後にのみ呼ぶ。`confirm_hash` が下書きと一致しなければ拒否 |
+| `get_post_request_status(request_id)` | 状態確認。結果不明の場合は直近25件の投稿と照合して公開済みか判定 |
+
+安全設計:
+- 承認はツール説明でも必須化（LLM は承認なしに `publish_text_post` を呼んではならない）。MCP クライアントのツール実行確認も有効にしてください。
+- 状態管理（SQLite `post_requests`）: `prepared → creating → container_created → publishing → published`、`failed`（API が明確に拒否＝未公開）、`unknown`（公開呼び出しがタイムアウト/5xx＝公開済みかもしれない）。遷移は compare-and-set で、同時呼び出しでも二重実行しません。`publishing` は API 呼び出し**前**に保存します。
+- 公開済みの `request_id` を再度呼んでも再投稿せず既存結果を返す。同一アカウント・24時間以内の同一本文は拒否。
+- 書き込みは自動再送しない（1回のみ）。`unknown` の場合は `get_post_request_status` → ユーザー確認 → `allow_retry_after_unknown=true` の順でのみ再試行可。コンテナ作成のみ失敗した場合は未公開なので、そのまま再実行できます。
+- 公式仕様（2026-10確認）: `POST /{user}/threads`（`media_type=TEXT`, `text`≤500、絵文字は UTF-8 バイト換算）→ `GET /{container}?fields=status,error_message` → `POST /{user}/threads_publish`（`creation_id`）。1日250投稿まで。**同じ `creation_id` で再公開した場合の挙動は公式ドキュメントに記載がない**ため、上記の自前の状態管理で重複を防いでいます。コンテナの有効期限・status の値の一覧も公式ページで確認できませんでした（`FINISHED` を準備完了、`ERROR`/`EXPIRED` を失敗として扱う）。
+- 画像・カルーセル・予約投稿は未実装（`ThreadsPublisher` に `create_*_container` を足す形で拡張）。
+
+### 有効化手順
+
+1. Meta Developers > 自分のアプリ > Threads API の権限に `threads_content_publish` を追加。開発モードでは Threads テスターとして追加済みの自分のアカウントなら App Review 前でも承認できます（他ユーザー向けは App Review が必要）。
+2. 再認可（本人操作・ブラウザ）: 新しいスコープは再承認が必要です。
+   ```bash
+   .venv/bin/threads-insights-auth login --publish
+   ```
+   通常の `login` はこれまでどおり insights 用の最小権限のままです。`--publish` で得たトークンは両方の権限を含みます。権限のないトークンで投稿を試みると、API を呼ぶ前に拒否します（トークンファイルにスコープを記録。環境変数トークンは判別不能で API 側エラーになります）。
+3. MCP 設定の `env` に `"THREADS_ENABLE_PUBLISH": "1"` を追加し、クライアントを再起動。
+
+### MCP クライアントへの登録
+
+- **Claude Desktop**: `~/Library/Application Support/Claude/claude_desktop_config.json` の `threads-insights` の `env` に追加して再起動。
+- **Claude Code**: `claude mcp remove threads-insights && claude mcp add -e THREADS_ENABLE_PUBLISH=1 ... threads-insights -- /ABS/PATH/.venv/bin/python -m threads_insights.server`（既存の env も `-e` で引き継ぐ）。
+- **ChatGPT**: ChatGPT のコネクタはリモート（HTTPS）MCP が前提で、ローカル stdio は登録できません（一般仕様で、今回の環境では未検証）。本サーバーの HTTP モードは認証が未実装のため、インターネットに公開しないでください。公開操作を伴うため、ChatGPT 経由の投稿は現時点で非対応とします。
+
 ## セキュリティ
 
-- 全リクエストは固定ホスト `graph.threads.com` への GET のみ。`paging.next` の URL は辿らず、cursor は形式検証。
+- 全リクエストは固定ホスト `graph.threads.com` へのもの。分析系は GET のみ（投稿機能を有効にした場合のみ、専用クラスが POST を送る）。`paging.next` の URL は辿らず、cursor は形式検証。
 - 投稿IDは数字のみ、`limit`/`days`/件数は範囲検証。任意SQLツールなし。
 - トークンはログ・エラーメッセージに出力しない（httpx ログ抑制、例外の URL を除去）。
 - `.env`・DB・トークンファイルは `.gitignore` 済み。
