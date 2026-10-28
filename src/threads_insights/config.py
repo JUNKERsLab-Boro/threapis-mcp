@@ -20,6 +20,9 @@ class Config:
     token_file: Path
     timeout: float
     enable_publish: bool = False
+    enable_scheduled: bool = False
+    scheduled_account: str = "junkerslabtech"
+    scheduled_grace_minutes: int = 30
 
     @classmethod
     def from_env(cls, load_env_file: bool = True) -> "Config":
@@ -36,6 +39,12 @@ class Config:
             raise ConfigError("THREADS_HTTP_TIMEOUT must be a number") from e
         if not 1 <= timeout <= 120:
             raise ConfigError("THREADS_HTTP_TIMEOUT must be between 1 and 120")
+        try:
+            grace = int(get("THREADS_SCHEDULED_GRACE_MINUTES") or 30)
+        except ValueError as e:
+            raise ConfigError("THREADS_SCHEDULED_GRACE_MINUTES must be an integer") from e
+        if not 1 <= grace <= 120:
+            raise ConfigError("THREADS_SCHEDULED_GRACE_MINUTES must be between 1 and 120")
         return cls(
             app_id=get("THREADS_APP_ID"),
             app_secret=get("THREADS_APP_SECRET"),
@@ -46,4 +55,7 @@ class Config:
             token_file=Path(get("THREADS_TOKEN_FILE") or "./data/token.json").expanduser(),
             timeout=timeout,
             enable_publish=(get("THREADS_ENABLE_PUBLISH") or "").lower() in ("1", "true", "yes"),
+            enable_scheduled=(get("THREADS_ENABLE_SCHEDULED") or "").lower() in ("1", "true", "yes"),
+            scheduled_account=(get("THREADS_SCHEDULED_ACCOUNT") or "junkerslabtech").lstrip("@"),
+            scheduled_grace_minutes=grace,
         )

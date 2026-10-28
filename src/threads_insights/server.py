@@ -7,6 +7,7 @@ import sys
 from typing import Annotated
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from .client import ThreadsClient
@@ -28,7 +29,7 @@ def get_service() -> Service:
     return _service
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
 def get_account_insights(
     days: Annotated[int | None, Field(ge=1, le=365, description="Look-back window in days (default: API default, ~yesterday to today)")] = None,
     follower_breakdown: Annotated[str | None, Field(description="Optional: country|city|age|gender (needs >=100 followers)")] = None,
@@ -40,13 +41,13 @@ def get_account_insights(
     return get_service().account_insights(days, follower_breakdown, start_date, end_date)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
 def get_post_insights(post_id: Annotated[str, Field(pattern=r"^\d{1,30}$", description="Numeric Threads media ID")]) -> dict:
     """Insights for one post: views, likes, replies, reposts, quotes (null if unavailable)."""
     return get_service().post_insights(post_id)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
 def get_recent_posts(
     limit: Annotated[int, Field(ge=1, le=100)] = 25,
     after: Annotated[str | None, Field(description="Pagination cursor from a previous paging.next_cursor")] = None,
@@ -55,7 +56,7 @@ def get_recent_posts(
     return get_service().recent_posts(limit, after)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
 def compare_posts(
     post_ids: Annotated[list[str] | None, Field(max_length=20, description="Posts to compare")] = None,
     recent: Annotated[int | None, Field(ge=1, le=25, description="Or compare the N latest posts (default 5)")] = None,
@@ -107,6 +108,32 @@ if Config.from_env().enable_publish:
         """Read-only status of a post request (prepared/published/failed/unknown). For an unknown outcome it
         checks the account's recent posts to see whether the post actually went live."""
         return get_publish_service().status(request_id)
+
+
+# --- Unattended scheduled posting (opt-in: THREADS_ENABLE_SCHEDULED=1). Independent of manual publishing. ---
+if Config.from_env().enable_scheduled:
+    from .publish_service import PublishService as _PS
+    from .publish_store import PublishStore as _PStore
+    from .publisher import ThreadsPublisher as _TP
+    from .scheduled import ScheduledService
+
+    _sched: ScheduledService | None = None
+
+    @mcp.tool(annotations=ToolAnnotations(  # honest: it writes publicly, so ChatGPT may keep asking for approval
+        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True))
+    def publish_scheduled_post(
+        text: Annotated[str, Field(min_length=1, max_length=500, description="Final post text (max 500)")],
+    ) -> dict:
+        """PUBLIC ACTION, no per-post approval: publishes `text` to the fixed account (@junkerslabtech by default)
+        for the CURRENT daily slot (07:00 or 20:00 JST). Refused outside a slot, if the text is empty/duplicate,
+        or if the slot already has a post. At most one post per slot. On 'unknown' status do NOT retry.
+        Returns post_id, text and published_at on success."""
+        global _sched
+        if _sched is None:
+            cfg = Config.from_env()
+            ps = _PS(_TP(cfg), _PStore(Database(cfg.db_path)))
+            _sched = ScheduledService(ps, cfg.scheduled_account, cfg.scheduled_grace_minutes)
+        return _sched.publish(text)
 
 
 def main() -> None:
