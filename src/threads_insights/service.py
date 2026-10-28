@@ -36,9 +36,14 @@ class Service:
     def __init__(self, client: ThreadsClient, db: Database):
         self.client, self.db = client, db
 
-    def account_insights(self, days: int | None = None, breakdown: str | None = None) -> dict:
+    def account_insights(self, days: int | None = None, breakdown: str | None = None,
+                         start_date: str | None = None, end_date: str | None = None) -> dict:
         since = until = None
-        if days is not None:
+        if (start_date or end_date) and days is not None:
+            raise ValidationError("use either days or start_date/end_date, not both")
+        if start_date or end_date:
+            since, until = self._date_range(start_date, end_date)
+        elif days is not None:
             if not isinstance(days, int) or not 1 <= days <= MAX_DAYS:
                 raise ValidationError(f"days must be an integer 1..{MAX_DAYS}")
             until = int(time.time())
@@ -48,6 +53,22 @@ class Service:
         return {"fetched_at": fetched, "period": {"since": since, "until": until}, **m,
                 "notes": "views is the sum over the period (daily series in views_daily); "
                          "unavailable metrics are null"}
+
+    @staticmethod
+    def _date_range(start_date: str | None, end_date: str | None) -> tuple[int, int]:
+        """YYYY-MM-DD (UTC). end_date is inclusive: until = start of the following day."""
+        from datetime import date, datetime, time as dtime, timedelta, timezone
+        try:
+            start = date.fromisoformat(start_date) if start_date else None
+            end = date.fromisoformat(end_date) if end_date else date.today()
+        except ValueError:
+            raise ValidationError("dates must be YYYY-MM-DD") from None
+        if start is None or end < start:
+            raise ValidationError("start_date is required and must be <= end_date")
+        if (end - start).days > MAX_DAYS:
+            raise ValidationError(f"range must be at most {MAX_DAYS} days")
+        ts = lambda d: int(datetime.combine(d, dtime.min, tzinfo=timezone.utc).timestamp())
+        return ts(start), min(ts(end + timedelta(days=1)), int(time.time()))
 
     def recent_posts(self, limit: int = 25, after: str | None = None) -> dict:
         body = self.client.list_posts(limit, after)

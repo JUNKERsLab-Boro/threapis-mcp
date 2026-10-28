@@ -32,9 +32,12 @@ def get_service() -> Service:
 def get_account_insights(
     days: Annotated[int | None, Field(ge=1, le=365, description="Look-back window in days (default: API default, ~yesterday to today)")] = None,
     follower_breakdown: Annotated[str | None, Field(description="Optional: country|city|age|gender (needs >=100 followers)")] = None,
+    start_date: Annotated[str | None, Field(description="YYYY-MM-DD (UTC), inclusive. Use with end_date instead of days")] = None,
+    end_date: Annotated[str | None, Field(description="YYYY-MM-DD (UTC), inclusive; defaults to today")] = None,
 ) -> dict:
-    """Account-wide Threads insights: views, likes, replies, reposts, quotes, clicks, followers_count."""
-    return get_service().account_insights(days, follower_breakdown)
+    """Account-wide Threads insights (read-only): views, likes, replies, reposts, quotes, clicks, followers_count.
+    Use days, or start_date/end_date for an explicit range."""
+    return get_service().account_insights(days, follower_breakdown, start_date, end_date)
 
 
 @mcp.tool()

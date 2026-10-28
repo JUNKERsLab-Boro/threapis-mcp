@@ -107,3 +107,15 @@ def test_wal_and_duplicate_snapshot(svc):
     svc.post_insights("1"); svc.post_insights("1")  # same-second snapshots are deduped by UNIQUE
     assert svc.db.count("post_insights") >= 1
     assert svc.db.count("posts") == 1
+
+
+def test_account_insights_date_range(svc, fake):
+    r = svc.account_insights(start_date="2026-10-21", end_date="2026-10-28")
+    assert r["period"]["since"] == 1792540800  # 2026-10-21T00:00Z
+    assert r["period"]["until"] <= 1793232000 and r["views"] == 25
+    with pytest.raises(ValidationError):
+        svc.account_insights(start_date="2026-10-28", end_date="2026-10-21")
+    with pytest.raises(ValidationError):
+        svc.account_insights(start_date="bad")
+    with pytest.raises(ValidationError):
+        svc.account_insights(days=3, start_date="2026-10-21")

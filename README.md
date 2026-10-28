@@ -6,7 +6,7 @@ Meta 公式 Threads API を使った **読み取り専用** の MCP サーバー
 
 | ツール | 内容 |
 |---|---|
-| `get_account_insights(days?, follower_breakdown?)` | views / likes / replies / reposts / quotes / clicks / followers_count（`views` は期間合計＋日次系列）。`follower_breakdown`=country\|city\|age\|gender（フォロワー100人以上） |
+| `get_account_insights(days? / start_date?, end_date?, follower_breakdown?)` | views / likes / replies / reposts / quotes / clicks / followers_count（`views` は期間合計＋日次系列）。`follower_breakdown`=country\|city\|age\|gender（フォロワー100人以上） |
 | `get_post_insights(post_id)` | views / likes / replies / reposts / quotes と engagement_rate。API が返さない指標は `null` |
 | `get_recent_posts(limit=25, after?)` | id・本文・日時・permalink 等。`paging.next_cursor` を `after` に渡して次ページ |
 | `compare_posts(post_ids? , recent?)` | 複数投稿（最大20）または直近N件（最大25、既定5）の比較とランキング |
@@ -94,7 +94,7 @@ claude mcp add threads-insights -- /ABS/PATH/.venv/bin/python -m threads_insight
 
 - **Claude Desktop**: `~/Library/Application Support/Claude/claude_desktop_config.json` の `threads-insights` の `env` に追加して再起動。
 - **Claude Code**: `claude mcp remove threads-insights && claude mcp add -e THREADS_ENABLE_PUBLISH=1 ... threads-insights -- /ABS/PATH/.venv/bin/python -m threads_insights.server`（既存の env も `-e` で引き継ぐ）。
-- **ChatGPT**: ChatGPT のコネクタはリモート（HTTPS）MCP が前提で、ローカル stdio は登録できません（一般仕様で、今回の環境では未検証）。本サーバーの HTTP モードは認証が未実装のため、インターネットに公開しないでください。公開操作を伴うため、ChatGPT 経由の投稿は現時点で非対応とします。
+- **ChatGPT**: 通常チャットで使う手順は [docs/CHATGPT.md](docs/CHATGPT.md)（Secure MCP Tunnel）。以下は旧メモ: ChatGPT のコネクタはリモート（HTTPS）MCP が前提で、ローカル stdio は登録できません（一般仕様で、今回の環境では未検証）。本サーバーの HTTP モードは認証が未実装のため、インターネットに公開しないでください。公開操作を伴うため、ChatGPT 経由の投稿は現時点で非対応とします。
 
 ## セキュリティ
 
