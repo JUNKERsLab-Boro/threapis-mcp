@@ -20,9 +20,10 @@ class Config:
     token_file: Path
     timeout: float
     enable_publish: bool = False
-    enable_scheduled: bool = False
-    scheduled_account: str = "junkerslabtech"
-    scheduled_grace_minutes: int = 30
+    enable_auto_post: bool = False
+    auto_post_account: str = "junkerslabtech"
+    auto_min_interval_minutes: int = 60
+    auto_max_per_day: int = 4
 
     @classmethod
     def from_env(cls, load_env_file: bool = True) -> "Config":
@@ -39,12 +40,15 @@ class Config:
             raise ConfigError("THREADS_HTTP_TIMEOUT must be a number") from e
         if not 1 <= timeout <= 120:
             raise ConfigError("THREADS_HTTP_TIMEOUT must be between 1 and 120")
-        try:
-            grace = int(get("THREADS_SCHEDULED_GRACE_MINUTES") or 30)
-        except ValueError as e:
-            raise ConfigError("THREADS_SCHEDULED_GRACE_MINUTES must be an integer") from e
-        if not 1 <= grace <= 120:
-            raise ConfigError("THREADS_SCHEDULED_GRACE_MINUTES must be between 1 and 120")
+        def bounded(name: str, default: int, lo: int, hi: int) -> int:
+            try:
+                v = int(get(name) or default)
+            except ValueError as e:
+                raise ConfigError(f"{name} must be an integer") from e
+            if not lo <= v <= hi:
+                raise ConfigError(f"{name} must be between {lo} and {hi}")
+            return v
+
         return cls(
             app_id=get("THREADS_APP_ID"),
             app_secret=get("THREADS_APP_SECRET"),
@@ -55,7 +59,8 @@ class Config:
             token_file=Path(get("THREADS_TOKEN_FILE") or "./data/token.json").expanduser(),
             timeout=timeout,
             enable_publish=(get("THREADS_ENABLE_PUBLISH") or "").lower() in ("1", "true", "yes"),
-            enable_scheduled=(get("THREADS_ENABLE_SCHEDULED") or "").lower() in ("1", "true", "yes"),
-            scheduled_account=(get("THREADS_SCHEDULED_ACCOUNT") or "junkerslabtech").lstrip("@"),
-            scheduled_grace_minutes=grace,
+            enable_auto_post=(get("THREADS_ENABLE_AUTO_POST") or "").lower() in ("1", "true", "yes"),
+            auto_post_account=(get("THREADS_AUTO_POST_ACCOUNT") or "junkerslabtech").lstrip("@"),
+            auto_min_interval_minutes=bounded("THREADS_AUTO_MIN_INTERVAL_MINUTES", 60, 1, 1440),
+            auto_max_per_day=bounded("THREADS_AUTO_MAX_PER_DAY", 4, 1, 24),
         )

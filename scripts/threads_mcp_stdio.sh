@@ -8,5 +8,5 @@ export THREADS_TOKEN_FILE="${THREADS_TOKEN_FILE:-$ROOT/data/token.json}"
 export THREADS_DB_PATH="${THREADS_DB_PATH:-$ROOT/data/threads_insights.db}"
 export THREADS_MCP_TRANSPORT=stdio
 export THREADS_ENABLE_PUBLISH="${THREADS_ENABLE_PUBLISH:-0}"
-export THREADS_ENABLE_SCHEDULED="${THREADS_ENABLE_SCHEDULED:-0}"
+export THREADS_ENABLE_AUTO_POST="${THREADS_ENABLE_AUTO_POST:-0}"
 exec "$ROOT/.venv/bin/python" -m threads_insights.server

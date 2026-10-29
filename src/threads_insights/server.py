@@ -110,30 +110,30 @@ if Config.from_env().enable_publish:
         return get_publish_service().status(request_id)
 
 
-# --- Unattended scheduled posting (opt-in: THREADS_ENABLE_SCHEDULED=1). Independent of manual publishing. ---
-if Config.from_env().enable_scheduled:
+# --- Unattended posting (opt-in: THREADS_ENABLE_AUTO_POST=1). Independent of manual publishing. ---
+if Config.from_env().enable_auto_post:
+    from .auto_post import AutoPostService
     from .publish_service import PublishService as _PS
     from .publish_store import PublishStore as _PStore
     from .publisher import ThreadsPublisher as _TP
-    from .scheduled import ScheduledService
 
-    _sched: ScheduledService | None = None
+    _auto: AutoPostService | None = None
 
     @mcp.tool(annotations=ToolAnnotations(  # honest: it writes publicly, so ChatGPT may keep asking for approval
-        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True))
-    def publish_scheduled_post(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True))
+    def publish_auto_post(
         text: Annotated[str, Field(min_length=1, max_length=500, description="Final post text (max 500)")],
     ) -> dict:
-        """PUBLIC ACTION, no per-post approval: publishes `text` to the fixed account (@junkerslabtech by default)
-        for the CURRENT daily slot (07:00 or 20:00 JST). Refused outside a slot, if the text is empty/duplicate,
-        or if the slot already has a post. At most one post per slot. On 'unknown' status do NOT retry.
+        """PUBLIC ACTION, no per-post approval: publishes `text` to the fixed account (@junkerslabtech by default).
+        Callable any time; the schedule is the caller's job. Rate-limited (min interval + max per 24h). Refused
+        for empty/duplicate text or age/school-grade wording. On status 'unknown' do NOT retry.
         Returns post_id, text and published_at on success."""
-        global _sched
-        if _sched is None:
+        global _auto
+        if _auto is None:
             cfg = Config.from_env()
             ps = _PS(_TP(cfg), _PStore(Database(cfg.db_path)))
-            _sched = ScheduledService(ps, cfg.scheduled_account, cfg.scheduled_grace_minutes)
-        return _sched.publish(text)
+            _auto = AutoPostService(ps, cfg.auto_post_account, cfg.auto_min_interval_minutes, cfg.auto_max_per_day)
+        return _auto.publish(text)
 
 
 def main() -> None:
